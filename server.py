@@ -86,19 +86,19 @@ def respond_to_slack_message(res):
     )
 
     answer = conversation({"question": user_input})['text']
+    curr_at = res['user_id']
 
     data = {
-            'response_type': 'ephemeral',
-            'text': answer
+            'response_type': 'in_channel',
+            'text': f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer
             }
     
-    curr_at = res['user_id']
     requests.post(res['response_url'], json=data)
 
  
     client.chat_postMessage(
                             channel=channel_id,
-                            text=(f"<@{curr_at}>  \n 🤓 Your Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
+                            text=(f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
 
     return "ok"
 
@@ -117,7 +117,7 @@ def app_mentioned(data):
 
   responseText = (f'hi <@{user}>')
   response =client.chat_postMessage(
-    channel="D06EL6X3D4P",
+    channel=channel_id,
     user_id = user,
     user = user,
     text = responseText
