@@ -7,6 +7,7 @@ from flask import Flask
 from flask import request, jsonify
 
 from slack_sdk import WebClient 
+import slack
 from slackeventsapi import SlackEventAdapter
 
 
@@ -27,9 +28,17 @@ from langchain.memory import ConversationBufferMemory
 app = Flask(__name__)
 
 slack_token = os.environ.get('SLACK_BOT_TOKEN')
+slack_client_id = os.environ.get('SLACK_CLIENT_ID')
 SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
+SLACK_CLIENT_SECRET = os.environ["SLACK_CLIENT_SECRET"]
+
+slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, "/slack/events", app)
+
 #SLACK_VERIFICATION_TOKEN = os.environ["SLACK_VERIFICATION_TOKEN"]
+
 client = WebClient(token=slack_token)
+
+token_database = {}
 
 llm = ChatOpenAI(temperature=0, model_name="gpt-4")
 memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
@@ -46,15 +55,42 @@ command_worker.start()
 
 @app.route("/")
 def home():
-    return "ok"
+  print(request)
+  # Retrieve the auth code and state from the request params
+  auth_code = request.args["code"]  
+  print(auth_code)
+
+
+  global client
+  response = client.oauth_v2_access(
+        client_id=slack_client_id,
+        client_secret=SLACK_CLIENT_SECRET,
+        code=auth_code
+    )
+
+
+  # Save the bot token and teamID to a database
+  # In our example, we are saving it to dictionary to represent a DB  
+  teamID = response["team"]["id"]
+  token_database[teamID] = response["access_token"]
+
+  client = slack.WebClient(token=slack_token)
+
+  # testing this with the cseed workspace so hardocding cseed-announce channel for now
+  #test convo creation later lmao
+  #resp = client.conversations_create(name="cseed-announce")
+
+  print(token_database)
+
+  return "auth succesful!"
 	
 @app.route("/hawagpt", methods=['GET', 'POST'])
 def get_slash_command():
     command_loop.call_soon_threadsafe(respond_to_slack_message,
                                       request.form)
     return jsonify(
-        response_type='ephemeral',
-        text="Getting your answer...",
+        response_type='in_channel',
+        text="Getting your answer... to the question: " + request.form['text'],
     )
 
 
@@ -101,11 +137,6 @@ def respond_to_slack_message(res):
                             text=(f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
 
     return "ok"
-
-# Bind the Events API route to your existing Flask app by passing the server
-# instance as the last param, or with `server=app`.
-slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, "/slack/events", app)
-
 
 #ok so bot should be mentioned in the channel to respond in that channel?
 @staticmethod
