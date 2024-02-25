@@ -71,7 +71,7 @@ def home():
 
   # Save the bot token and teamID to a database
   # In our example, we are saving it to dictionary to represent a DB  
-  teamID = response["team"]["id"]
+  teamID = response["team"]["id"] 
   token_database[teamID] = response["access_token"]
 
   client = slack.WebClient(token=slack_token)
