@@ -1,6 +1,7 @@
 import os
 import asyncio
 import requests
+import logging
 from threading import Thread
 
 from flask import Flask
@@ -9,7 +10,6 @@ from flask import request, jsonify
 from slack_sdk import WebClient 
 import slack
 from slackeventsapi import SlackEventAdapter
-
 
 from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts.chat import (
@@ -22,10 +22,49 @@ from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain.chains import LLMChain
 from langchain.memory import ConversationBufferMemory
-
-
-
 app = Flask(__name__)
+
+# Set up logging
+logging.basicConfig(level=logging.WARNING)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('openai').setLevel(logging.WARNING)
+
+blocks = [
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f" 🤓 Query:\n\n🧠 Answer:"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "Choose whether to make the response visible:"
+            },
+            "accessory": {
+                "type": "static_select",
+                "action_id": "visibility_select",
+                "options": [
+                    {
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Make Response Visible"
+                        },
+                        "value": "visible"
+                    },
+                    {
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Hide Response"
+                        },
+                        "value": "hidden"
+                    }
+                ]
+            }
+        }
+    ]
 
 slack_token = os.environ.get('SLACK_BOT_TOKEN')
 slack_client_id = os.environ.get('SLACK_CLIENT_ID')
@@ -38,6 +77,7 @@ slack_events_adapter = SlackEventAdapter(SLACK_SIGNING_SECRET, "/slack/events", 
 
 client = WebClient(token=slack_token)
 
+user_db = {}
 token_database = {}
 
 llm = ChatOpenAI(temperature=0, model_name="gpt-4")
@@ -61,20 +101,17 @@ def home():
   print(auth_code)
 
 
+
   global client
   response = client.oauth_v2_access(
         client_id=slack_client_id,
         client_secret=SLACK_CLIENT_SECRET,
         code=auth_code
     )
-
-
-  # Save the bot token and teamID to a database
-  # In our example, we are saving it to dictionary to represent a DB  
+  # save team id with corresponding auth access token to a databas!
+  # dummy representation of a  database for now
   teamID = response["team"]["id"] 
   token_database[teamID] = response["access_token"]
-
-  client = slack.WebClient(token=slack_token)
 
   # testing this with the cseed workspace so hardocding cseed-announce channel for now
   #test convo creation later lmao
@@ -89,7 +126,7 @@ def get_slash_command():
     command_loop.call_soon_threadsafe(respond_to_slack_message,
                                       request.form)
     return jsonify(
-        response_type='in_channel',
+        response_type='ephemeral',
         text="Getting your answer... to the question: " + request.form['text'],
     )
 
@@ -100,7 +137,11 @@ def respond_to_slack_message(res):
 
     user_input = res['text']
     channel_id = res['channel_id'] 
+    user_id = res['user_id']
+
     print("channel" + channel_id)
+    print("user" + user_id)
+
     
     prompt = ChatPromptTemplate(
         messages=[
@@ -113,29 +154,40 @@ def respond_to_slack_message(res):
             HumanMessagePromptTemplate.from_template("{question}")
         ]
     )
+    
+    if user_id not in user_db:
+       user_db[user_id] = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+       print("hello!!!! this is user database convo buffer")
+       print(user_db.get(user_id))
+
+    curr_memory = user_db.get(user_id)
+    print("curr_memory")
+    print(curr_memory.load_memory_variables({})
+
+)
 
     conversation = LLMChain(
         llm=llm,
         prompt=prompt,
         verbose=True,
-        memory=memory
+        memory=curr_memory
     )
 
     answer = conversation({"question": user_input})['text']
     curr_at = res['user_id']
 
     data = {
-            'response_type': 'in_channel',
+            'response_type': 'ephemeral',
             'text': f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer
             }
     
     requests.post(res['response_url'], json=data)
 
  
-    client.chat_postMessage(
-                            channel=channel_id,
-                            text=(f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
-
+  #  client.chat_postMessage(
+  #                          channel=channel_id,
+   #                         text=(f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
+#
     return "ok"
 
 #ok so bot should be mentioned in the channel to respond in that channel?
