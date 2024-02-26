@@ -5,11 +5,12 @@ import logging
 from threading import Thread
 
 from flask import Flask
-from flask import request, jsonify
+from flask import request, jsonify, make_response
 
 from slack_sdk import WebClient 
 import slack
 from slackeventsapi import SlackEventAdapter
+from slack_sdk.errors import SlackApiError
 
 from langchain_community.chat_models import ChatOpenAI
 from langchain.prompts.chat import (
@@ -124,7 +125,7 @@ def home():
 @app.route("/hawagpt", methods=['GET', 'POST'])
 def get_slash_command():
     command_loop.call_soon_threadsafe(respond_to_slack_message,
-                                      request.form)
+                                      request.form)    
     return jsonify(
         response_type='ephemeral',
         text="Getting your answer... to the question: " + request.form['text'],
@@ -132,8 +133,44 @@ def get_slash_command():
 
 
 def respond_to_slack_message(res):
-    # look for current channel
-    print(res)
+    payload = res
+
+    try: 
+        print("api call to open modal")
+        api_response = client.views_open(
+                        trigger_id=payload["trigger_id"],
+                        view={
+                            "type": "modal",
+                            "callback_id": "modal-id",
+                            "title": {
+                                "type": "plain_text",
+                                "text": "Awesome Modal"
+                            },
+                            "submit": {
+                                "type": "plain_text",
+                                "text": "Submit"
+                            },
+                            "blocks": [
+                                {
+                                    "type": "input",
+                                    "block_id": "b-id",
+                                    "label": {
+                                        "type": "plain_text",
+                                        "text": "Input label",
+                                    },
+                                    "element": {
+                                        "action_id": "a-id",
+                                        "type": "plain_text_input",
+                                    }
+                                }
+                            ]
+                        }
+                    )
+        print("api call over")
+        print(api_response)
+    except SlackApiError as e:
+        code = e.response["error"]
+        return make_response(f"failied to opne modal, code: {code}", 200)
 
     user_input = res['text']
     channel_id = res['channel_id'] 
@@ -188,7 +225,56 @@ def respond_to_slack_message(res):
   #                          channel=channel_id,
    #                         text=(f"<@{curr_at}>  \n 🤓 Query: " + res['text'] + "\n\n🧠 Answer: " + answer) )
 #
-    return "ok"
+    return make_response("", 200)
+
+
+@slack_events_adapter.on("app_home_opened")
+def home_tab_opened(data):
+    client.chat_postMessage(
+    channel=data['event']['channel'],
+    blocks=[
+        # {
+        #     "type": "section",
+        #     "text": {
+        #         "type": "mrkdwn",
+        #         "text": "<https://example.com|Overlook Hotel> \n :star: \n Doors had too many axe holes, guest in room " +
+        #             "237 was far too rowdy, whole place felt stuck in the 1920s."
+        #     },
+        #     "accessory": {
+        #         "type": "image",
+        #         "image_url": "https://images.pexels.com/photos/750319/pexels-photo-750319.jpeg",
+        #         "alt_text": "Haunted hotel image"
+        #     }
+        # },
+		{
+			"type": "input",
+			"element": {
+				"type": "radio_buttons",
+				"options": [
+					{
+						"text": {
+							"type": "plain_text",
+							"text": "yes",
+						},
+						"value": "yes"
+					},
+					{
+						"text": {
+							"type": "plain_text",
+							"text": "no",
+						},
+						"value": "no"
+					}
+				],
+				"action_id": "radio_buttons-action"
+			},
+			"label": {
+				"type": "plain_text",
+				"text": "Would you like the response to be visible to all in the channel?",
+			}
+		}
+	]
+)
 
 #ok so bot should be mentioned in the channel to respond in that channel?
 @staticmethod
@@ -205,7 +291,6 @@ def app_mentioned(data):
     user = user,
     text = responseText
   )
-
 
 # Create an event listener for "reaction_added" events and print the emoji name
 @slack_events_adapter.on("reaction_added")
