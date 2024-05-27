@@ -62,6 +62,13 @@ command_loop = asyncio.new_event_loop()
 command_worker = Thread(target=start_command_worker, args=(command_loop,))
 command_worker.start()
 
+
+
+# tools 
+function_dscrp = [
+    
+]
+
 @app.route("/")
 def home():
   print(request)
@@ -132,6 +139,7 @@ def validate_url():
 def scrape_and_summarize(link, page, response_url):
    page_contents = page.content
    soup = bs4(page_contents, "html.parser")
+   
 
    body = soup.find("body").text.strip()
    # 'p, pre, article, blockquote, h1, h2, h3, h4, h5, h6' and maybe 'li'
@@ -234,7 +242,8 @@ def respond_to_slack_message(res):
 @slack_events_adapter.on("app_home_opened")
 def home_tab_opened(data):
     logging.info("app_home_opened slack event! ", data)
-    user_id = data["authorizations"][0]["user_id"]
+    print(data)
+    user_id = data["event"]["user"]
 
     if(user_id not in app_opened_tracker):
         client.chat_postMessage(
